@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    @apply m-0 p-0 antialiased;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed
+           text-sm inline-flex items-center gap-2;
+  }
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg
+           transition-colors duration-150 text-sm inline-flex items-center gap-2
+           border border-gray-200;
+  }
+  .btn-danger {
+    @apply bg-red-50 hover:bg-red-100 text-red-600 font-medium px-3 py-1.5 rounded-lg
+           transition-colors duration-150 text-sm;
+  }
+  .btn-icon {
+    @apply p-1.5 rounded-md hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-700;
+  }
+  .input {
+    @apply border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+           focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full;
+  }
+  .select {
+    @apply border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+           focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white w-full;
+  }
+}
+
+[contenteditable]:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+[contenteditable]:empty::before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+.slide-canvas {
+  aspect-ratio: 16/9;
+}
+
+.context-menu {
+  @apply fixed z-50 bg-white rounded-lg shadow-xl border border-gray-200 py-1 min-w-[160px];
+}
+
+.context-menu-item {
+  @apply px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer flex items-center gap-2;
+}
+
+.context-menu-item.danger {
+  @apply text-red-600 hover:bg-red-50;
+}
+
+.tree-item {
+  @apply flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer text-sm
+         hover:bg-gray-100 transition-colors select-none;
+}
+
+.tree-item.active {
+  @apply bg-blue-50 text-blue-700;
+}
+
+.slide-thumbnail {
+  @apply border-2 border-transparent rounded-lg cursor-pointer overflow-hidden
+         transition-all hover:border-gray-300;
+}
+
+.slide-thumbnail.active {
+  @apply border-blue-500 shadow-md;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

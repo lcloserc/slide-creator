@@ -1,0 +1,1 @@
+Read the doce, .md douments in all packages, @PROJECT_PROMPT.md, and the manual. 
