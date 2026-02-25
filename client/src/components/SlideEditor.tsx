@@ -6,42 +6,35 @@ import { SlideCanvas } from './SlideCanvas';
 import { api } from '../lib/api';
 
 interface SlideEditorProps {
-  resourceId?: string;
-  templateId?: string;
+  resourceId: string;
   data: PresentationData;
-  mode: 'resource' | 'template';
 }
 
-export function SlideEditor({ resourceId, templateId, data, mode }: SlideEditorProps) {
+export function SlideEditor({ resourceId, data }: SlideEditorProps) {
   const updatePresentationData = useStore((s) => s.updatePresentationData);
   const [presentation, setPresentation] = useState<PresentationData>(data);
   const [selectedSlideIndex, setSelectedSlideIndex] = useState(0);
   const [showNotes, setShowNotes] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const idRef = useRef(resourceId || templateId);
+  const idRef = useRef(resourceId);
 
   useEffect(() => {
-    const newId = resourceId || templateId;
-    if (newId !== idRef.current) {
-      idRef.current = newId;
+    if (resourceId !== idRef.current) {
+      idRef.current = resourceId;
       setPresentation(data);
       setSelectedSlideIndex(0);
     }
-  }, [resourceId, templateId, data]);
+  }, [resourceId, data]);
 
   const persist = useCallback(
     (updated: PresentationData) => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(() => {
-        if (mode === 'resource' && resourceId) {
-          api.resources.update(resourceId, { contentJson: updated });
-          updatePresentationData(resourceId, updated);
-        } else if (mode === 'template' && templateId) {
-          api.slideTemplates.update(templateId, { templateData: updated });
-        }
+        api.resources.update(resourceId, { contentJson: updated });
+        updatePresentationData(resourceId, updated);
       }, 1000);
     },
-    [resourceId, templateId, mode, updatePresentationData]
+    [resourceId, updatePresentationData]
   );
 
   const update = useCallback(

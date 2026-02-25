@@ -7,8 +7,10 @@ This folder contains the SQL scripts that define the database schema and seed da
 | File | Purpose |
 |------|---------|
 | `01_schema.sql` | Drops and recreates all tables, indexes, and foreign keys |
-| `02_seed.sql` | Inserts default data (generation prompt, system prompt, two slide templates). Uses `ON CONFLICT ... DO UPDATE` so it's safe to re-run. |
-| `setup.sh` | Convenience script: runs both SQL files then `npx prisma generate` |
+| `seed.ts` | Node.js script that reads `seeds/manifest.json` + content files, upserts via Prisma |
+| `seeds/` | Directory of seed content files (prompts as `.md`, pipelines as `.json`) |
+| `seeds/manifest.json` | Maps each seed entry (UUID, name, metadata) to its content file |
+| `setup.sh` | Runs `01_schema.sql`, then `npx prisma generate`, then `npx tsx database/seed.ts` |
 
 ## First-Time Setup
 
@@ -66,7 +68,7 @@ DATABASE_URL="postgresql://slide_app:slide_app@localhost:5432/slide_creator?sche
 When you change the data model:
 
 1. **Edit `01_schema.sql`** — update the `CREATE TABLE` statements.
-2. **Edit `02_seed.sql`** if the seed data needs to change.
+2. **Edit seed files** in `seeds/` and `seeds/manifest.json` if the seed data needs to change.
 3. **Edit `server/prisma/schema.prisma`** — keep the Prisma models in sync with the SQL so the generated TypeScript client matches the actual tables.
 4. **Run `setup.sh`** to apply:
 
@@ -78,12 +80,12 @@ When you change the data model:
 
 ## Running the Scripts Manually
 
-If you prefer not to use `setup.sh`, you can run the SQL files directly:
+If you prefer not to use `setup.sh`, you can run the steps manually:
 
 ```bash
 psql -U slide_app -d slide_creator -f database/01_schema.sql
-psql -U slide_app -d slide_creator -f database/02_seed.sql
 cd server && npx prisma generate
+npx tsx ../database/seed.ts
 ```
 
 ## CLI Reference

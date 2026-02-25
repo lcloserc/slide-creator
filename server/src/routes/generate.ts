@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { resolveVariables } from '../lib/resolveVariables';
 import OpenAI from 'openai';
 
 export const generateRouter = Router();
@@ -11,18 +12,14 @@ generateRouter.post('/', async (req, res) => {
       sourceResourceIds,
       generationPromptId,
       systemPromptId,
-      slideTemplateId,
       outputFolderId,
       outputName,
     } = req.body;
 
-    const [sourceResources, generationPrompt, systemPrompt, slideTemplate] = await Promise.all([
+    const [sourceResources, generationPrompt, systemPrompt] = await Promise.all([
       prisma.resource.findMany({ where: { id: { in: sourceResourceIds } } }),
       prisma.generationPrompt.findUnique({ where: { id: generationPromptId } }),
       prisma.systemPrompt.findUnique({ where: { id: systemPromptId } }),
-      slideTemplateId
-        ? prisma.slideTemplate.findUnique({ where: { id: slideTemplateId } })
-        : null,
     ]);
 
     if (!generationPrompt) {
@@ -39,20 +36,17 @@ generateRouter.post('/', async (req, res) => {
       userContent += `=== SOURCE: ${resource.name} ===\n${text}\n\n`;
     }
 
-    if (slideTemplate) {
-      userContent += `=== SLIDE TEMPLATE (use this structure and theme as a reference) ===\n${JSON.stringify(slideTemplate.templateData, null, 2)}\n\n`;
-    }
-
-    userContent += generationPrompt.content;
+    userContent += await resolveVariables(generationPrompt.content);
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const resolvedSystemContent = await resolveVariables(systemPrompt.content);
 
     const completion = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || 'gpt-4o',
       temperature: parseFloat(process.env.OPENAI_TEMPERATURE || '0.7'),
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: systemPrompt.content },
+        { role: 'system', content: resolvedSystemContent },
         { role: 'user', content: userContent },
       ],
     });
@@ -80,11 +74,15 @@ generateRouter.post('/', async (req, res) => {
       });
     }
 
+    if (!data._format) {
+      data._format = 'slidecreator/presentation/v1';
+    }
+
     const resource = await prisma.resource.create({
       data: {
         name: outputName || `Generated — ${new Date().toLocaleString()}`,
         resourceType: 'presentation',
-        contentJson: presentationData as any,
+        contentJson: data as any,
         projectId,
         folderId: outputFolderId || null,
       },

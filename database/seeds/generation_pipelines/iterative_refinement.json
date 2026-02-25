@@ -1,0 +1,35 @@
+{
+  "steps": [
+    {
+      "name": "Initial Draft",
+      "generationPrompt": "Default generation prompt",
+      "systemPrompt": "Default system prompt",
+      "sources": [{ "type": "project_resources" }],
+      "saveToProject": true,
+      "outputNameTemplate": "{{project}} - Draft - {{timestamp}}"
+    },
+    {
+      "name": "Critique",
+      "generationPrompt": "Critique presentation",
+      "systemPrompt": "Presentation critic",
+      "sources": [
+        { "type": "project_resources" },
+        { "type": "step_output", "step": 0 }
+      ],
+      "saveToProject": false
+    },
+    {
+      "name": "Improved Version",
+      "generationPrompt": "Improve from critique",
+      "systemPrompt": "Default system prompt",
+      "sources": [
+        { "type": "project_resources" },
+        { "type": "step_output", "step": 0 },
+        { "type": "step_output", "step": 1 }
+      ],
+      "saveToProject": true,
+      "outputNameTemplate": "{{project}} - Improved - {{timestamp}}",
+      "isFinal": true
+    }
+  ]
+}

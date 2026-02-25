@@ -1,4 +1,5 @@
 import { useStore } from '../store';
+import { isPresentation } from '../types';
 import { TextEditor } from './TextEditor';
 import { SlideEditor } from './SlideEditor';
 
@@ -21,8 +22,8 @@ export function EditorPanel() {
 
   if (editorTarget.type === 'resource') {
     const { resource } = editorTarget;
-    if (resource.resourceType === 'presentation' && resource.contentJson) {
-      return <SlideEditor resourceId={resource.id} data={resource.contentJson} mode="resource" />;
+    if (isPresentation(resource) && resource.contentJson) {
+      return <SlideEditor resourceId={resource.id} data={resource.contentJson} />;
     }
     return <TextEditor resourceId={resource.id} content={resource.contentText || ''} />;
   }
@@ -49,8 +50,33 @@ export function EditorPanel() {
     );
   }
 
-  if (editorTarget.type === 'slide_template') {
-    return <SlideEditor templateId={editorTarget.item.id} data={editorTarget.item.templateData} mode="template" />;
+  if (editorTarget.type === 'output_format') {
+    return (
+      <TextEditor
+        resourceId={editorTarget.item.id}
+        content={editorTarget.item.content}
+        onSave={(content) => useStore.getState().updateOutputFormat(editorTarget.item.id, { content })}
+        label={editorTarget.item.name}
+      />
+    );
+  }
+
+  if (editorTarget.type === 'generation_pipeline') {
+    return (
+      <TextEditor
+        resourceId={editorTarget.item.id}
+        content={JSON.stringify(editorTarget.item.pipelineData, null, 2)}
+        onSave={(content) => {
+          try {
+            const pipelineData = JSON.parse(content);
+            useStore.getState().updateGenerationPipeline(editorTarget.item.id, { pipelineData });
+          } catch {
+            // invalid JSON — don't save
+          }
+        }}
+        label={editorTarget.item.name}
+      />
+    );
   }
 
   return null;

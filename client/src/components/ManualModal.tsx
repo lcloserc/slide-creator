@@ -58,10 +58,10 @@ export function ManualModal({ open, onClose }: ManualModalProps) {
                   Project name (click to rename), <strong>Generate</strong> button, <strong>Export PPTX</strong>, and <strong>Present</strong> (visible when a presentation is open). The <strong>☰ menu</strong> (right) provides access to this manual.
                 </Entry>
                 <Entry term="Tree Panel (left)">
-                  Two collapsible sections: <em>Program Resources</em> (shared across projects) and <em>Project Resources</em> (scoped to the selected project). Right-click items to rename, duplicate, or delete. Drag and drop files and folders to reorganize. Upload multiple files at once. The entire sidebar can be collapsed via the toggle strip at its edge.
+                  Two collapsible sections: <em>Program Resources</em> (shared across projects) and <em>[Project Name] - Resources</em> (scoped to the selected project). Right-click items to rename, duplicate, or delete. Drag and drop files and folders to reorganize. Upload multiple files at once — uploaded files are automatically placed in an "Imported" folder. The entire sidebar can be collapsed via the toggle strip at its edge.
                 </Entry>
                 <Entry term="Editor (center)">
-                  Opens the selected resource. Source files and prompts open a text editor. Presentations and templates open the visual slide editor. All edits auto-save.
+                  Opens the selected resource. Source files and prompts open a text editor. Presentations open the visual slide editor. All edits auto-save.
                 </Entry>
                 <Entry term="Slide Editor">
                   Thumbnail sidebar (left) for navigation and ordering. Slide canvas (center) with contenteditable blocks. Toolbar above for theme selection and notes toggle.
@@ -84,25 +84,29 @@ export function ManualModal({ open, onClose }: ManualModalProps) {
               </Section>
 
               <Section title="Program Resources (shared)">
+                <p className="text-sm mb-2">All program resource names must be <strong>unique across all types</strong>. Names are used as identifiers in pipeline definitions and output format variables. Renaming a resource may break references.</p>
                 <Entry term="Generation Prompts">
-                  Instructions telling the AI <em>how</em> to create a presentation (structure, length, block types). Selected when generating.
+                  Instructions telling the AI <em>how</em> to create a presentation. Can be organized into folders (e.g. "Pipeline"). Referenced by name in pipeline steps.
                 </Entry>
                 <Entry term="System Prompts">
-                  High-level role instructions sent to the AI as the system message. Selected when generating.
+                  High-level role instructions sent to the AI as the system message. Can be organized into folders. Referenced by name in pipeline steps.
                 </Entry>
-                <Entry term="Slide Templates">
-                  Reusable theme + slide structures. Optionally selected during generation to guide the AI's output format and colors.
+                <Entry term="Output Formats">
+                  Schema definitions that describe the expected JSON output structure. Referenced in prompts using <code>{'{{name}}'}</code> syntax (e.g. <code>{'{{Presentation schema}}'}</code>). The backend replaces these variables before sending to the AI.
+                </Entry>
+                <Entry term="Generation Pipelines">
+                  Multi-step generation workflows defined as JSON. Each step references prompts <strong>by name</strong>, specifies sources, and controls whether to save the output. Steps can reference outputs from previous steps.
                 </Entry>
               </Section>
 
               <Section title="Generation Flow">
-                <ol className="list-decimal list-inside space-y-1 text-sm">
-                  <li>Click <strong>Generate</strong> in the top bar.</li>
-                  <li>Select source files from the current project.</li>
-                  <li>Choose a generation prompt, system prompt, and (optionally) a slide template.</li>
-                  <li>Set an output name and folder, then confirm.</li>
-                  <li>The AI produces a presentation, which opens automatically in the slide editor.</li>
-                </ol>
+                <p className="text-sm mb-2">The Generate dialog offers two modes: <strong>Single Generation</strong> and <strong>Pipeline</strong>.</p>
+                <Entry term="Single Generation">
+                  Select source files, a generation prompt, and a system prompt. The AI produces a single presentation.
+                </Entry>
+                <Entry term="Pipeline">
+                  Select source files and a pipeline. The pipeline executes multiple steps sequentially (e.g. generate, critique, improve). Progress is shown step-by-step. The final result opens in the editor.
+                </Entry>
               </Section>
 
               <Section title="Key Features">

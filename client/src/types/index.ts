@@ -21,6 +21,7 @@ export interface Slide {
 }
 
 export interface PresentationData {
+  _format?: string;
   title: string;
   theme: Theme;
   slides: Slide[];
@@ -58,6 +59,7 @@ export interface GenerationPrompt {
   id: string;
   name: string;
   content: string;
+  folder: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,16 +68,70 @@ export interface SystemPrompt {
   id: string;
   name: string;
   content: string;
+  folder: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface SlideTemplate {
+export interface OutputFormat {
   id: string;
   name: string;
-  templateData: PresentationData;
+  content: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GenerationPipeline {
+  id: string;
+  name: string;
+  pipelineData: PipelineDefinition;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PipelineDefinition {
+  steps: PipelineStep[];
+}
+
+export interface PipelineStep {
+  name: string;
+  generationPrompt?: string;
+  generationPromptInline?: string;
+  systemPrompt?: string;
+  systemPromptInline?: string;
+  sources: StepSource[];
+  saveToProject: boolean;
+  outputNameTemplate?: string;
+  isFinal?: boolean;
+}
+
+export type StepSource =
+  | { type: 'project_resources' }
+  | { type: 'step_output'; step: number }
+  | { type: 'all_step_outputs' };
+
+export interface StepResult {
+  stepIndex: number;
+  stepName: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  resourceId?: string;
+  error?: string;
+}
+
+export interface PipelineRun {
+  id: string;
+  pipelineId: string;
+  projectId: string;
+  status: 'running' | 'completed' | 'failed';
+  currentStep: number;
+  totalSteps: number;
+  stepResults: StepResult[];
+  outputFolderId: string | null;
+  sourceResourceIds: string[];
+  finalResourceId: string | null;
+  error: string | null;
+  startedAt: string;
+  completedAt: string | null;
 }
 
 export const THEME_PRESETS: Record<string, Theme> = {
@@ -114,4 +170,11 @@ export type EditorTarget =
   | { type: 'resource'; resource: Resource }
   | { type: 'generation_prompt'; item: GenerationPrompt }
   | { type: 'system_prompt'; item: SystemPrompt }
-  | { type: 'slide_template'; item: SlideTemplate };
+  | { type: 'generation_pipeline'; item: GenerationPipeline }
+  | { type: 'output_format'; item: OutputFormat };
+
+export function isPresentation(resource: Resource): boolean {
+  const json = resource.contentJson as any;
+  if (json?._format?.startsWith('slidecreator/presentation')) return true;
+  return resource.resourceType === 'presentation' && !!json;
+}

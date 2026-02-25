@@ -40,12 +40,13 @@ echo "--- Running 01_schema.sql ---"
 psql -d "$DB_NAME" -f "$SCRIPT_DIR/01_schema.sql"
 echo ""
 
-echo "--- Running 02_seed.sql ---"
-psql -d "$DB_NAME" -f "$SCRIPT_DIR/02_seed.sql"
-echo ""
-
 echo "--- Generating Prisma client ---"
 (cd "$SCRIPT_DIR/../server" && npx prisma generate)
+echo ""
+
+echo "--- Running seed script ---"
+SERVER_DIR="$SCRIPT_DIR/../server"
+(cd "$SERVER_DIR" && NODE_PATH="$SERVER_DIR/node_modules" npx tsx "$SCRIPT_DIR/seed.ts")
 echo ""
 
 echo "=== Done. ==="

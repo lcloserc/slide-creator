@@ -48,12 +48,23 @@ export const api = {
     update: (id: string, data: any) => request<any>(`/system-prompts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (id: string) => request<any>(`/system-prompts/${id}`, { method: 'DELETE' }),
   },
-  slideTemplates: {
-    list: () => request<any[]>('/slide-templates'),
-    get: (id: string) => request<any>(`/slide-templates/${id}`),
-    create: (data: any) => request<any>('/slide-templates', { method: 'POST', body: JSON.stringify(data) }),
-    update: (id: string, data: any) => request<any>(`/slide-templates/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
-    delete: (id: string) => request<any>(`/slide-templates/${id}`, { method: 'DELETE' }),
+  outputFormats: {
+    list: () => request<any[]>('/output-formats'),
+    get: (id: string) => request<any>(`/output-formats/${id}`),
+    create: (data: any) => request<any>('/output-formats', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) => request<any>(`/output-formats/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) => request<any>(`/output-formats/${id}`, { method: 'DELETE' }),
+  },
+  generationPipelines: {
+    list: () => request<any[]>('/generation-pipelines'),
+    get: (id: string) => request<any>(`/generation-pipelines/${id}`),
+    create: (data: any) => request<any>('/generation-pipelines', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) => request<any>(`/generation-pipelines/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (id: string) => request<any>(`/generation-pipelines/${id}`, { method: 'DELETE' }),
+  },
+  pipelineRuns: {
+    create: (data: any) => request<any>('/pipeline-runs', { method: 'POST', body: JSON.stringify(data) }),
+    get: (id: string) => request<any>(`/pipeline-runs/${id}`),
   },
   generate: (data: any) => request<any>('/generate', { method: 'POST', body: JSON.stringify(data) }),
   upload: async (projectId: string, file: File, folderId?: string) => {

@@ -8,7 +8,9 @@ import { foldersRouter } from './routes/folders';
 import { resourcesRouter } from './routes/resources';
 import { generationPromptsRouter } from './routes/generationPrompts';
 import { systemPromptsRouter } from './routes/systemPrompts';
-import { slideTemplatesRouter } from './routes/slideTemplates';
+import { outputFormatsRouter } from './routes/outputFormats';
+import { generationPipelinesRouter } from './routes/generationPipelines';
+import { pipelineRunsRouter } from './routes/pipelineRuns';
 import { generateRouter } from './routes/generate';
 import { uploadRouter } from './routes/upload';
 
@@ -23,7 +25,9 @@ app.use('/api', foldersRouter);
 app.use('/api', resourcesRouter);
 app.use('/api/generation-prompts', generationPromptsRouter);
 app.use('/api/system-prompts', systemPromptsRouter);
-app.use('/api/slide-templates', slideTemplatesRouter);
+app.use('/api/output-formats', outputFormatsRouter);
+app.use('/api/generation-pipelines', generationPipelinesRouter);
+app.use('/api/pipeline-runs', pipelineRunsRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api', uploadRouter);
 

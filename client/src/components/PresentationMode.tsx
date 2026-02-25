@@ -12,8 +12,6 @@ export function PresentationMode() {
   let presentation: PresentationData | null = null;
   if (editorTarget.type === 'resource' && editorTarget.resource.contentJson) {
     presentation = editorTarget.resource.contentJson;
-  } else if (editorTarget.type === 'slide_template') {
-    presentation = editorTarget.item.templateData;
   }
 
   const handleKeyDown = useCallback(

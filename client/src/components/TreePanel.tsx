@@ -1,27 +1,30 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { useStore } from '../store';
 import { api } from '../lib/api';
-import type { Folder, Resource, GenerationPrompt, SystemPrompt, SlideTemplate } from '../types';
+import type { Folder, Resource, GenerationPrompt, SystemPrompt, OutputFormat, GenerationPipeline } from '../types';
+import { isPresentation } from '../types';
 
 export function TreePanel() {
   const {
     projects, currentProjectId, setCurrentProject, createProject, deleteProject,
-    folders, resources, generationPrompts, systemPrompts, slideTemplates,
+    folders, resources, generationPrompts, systemPrompts, outputFormats, generationPipelines,
     editorTarget, setEditorTarget, createFolder, renameFolder, deleteFolder,
     deleteResource, uploadFile, uploadFiles,
     createGenerationPrompt, deleteGenerationPrompt,
     createSystemPrompt, deleteSystemPrompt,
-    createSlideTemplate, deleteSlideTemplate,
+    createOutputFormat, deleteOutputFormat,
+    createGenerationPipeline, deleteGenerationPipeline,
   } = useStore();
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; target: any; targetType: string } | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renamingType, setRenamingType] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [renamingOriginalName, setRenamingOriginalName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['program', 'gen-prompts', 'sys-prompts', 'templates', 'project', 'project-resources'])
+    new Set(['program', 'gen-prompts', 'sys-prompts', 'project', 'project-resources'])
   );
   const [uploadConfirmFiles, setUploadConfirmFiles] = useState<File[] | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
@@ -49,26 +52,45 @@ export function TreePanel() {
 
   const closeContextMenu = () => setContextMenu(null);
 
+  const programResourceTypes = new Set(['generation_prompt', 'system_prompt', 'output_format', 'generation_pipeline']);
+
   const startRename = (id: string, currentName: string, targetType: string) => {
     setRenamingId(id);
     setRenamingType(targetType);
     setRenameValue(currentName);
+    setRenamingOriginalName(currentName);
     closeContextMenu();
   };
 
   const handleRenameSubmit = async () => {
     if (!renamingId || !renameValue.trim() || !renamingType) { setRenamingId(null); return; }
     const name = renameValue.trim();
-    if (renamingType === 'folder') {
-      await renameFolder(renamingId, name);
-    } else if (renamingType === 'resource') {
-      await useStore.getState().updateResource(renamingId, { name } as any);
-    } else if (renamingType === 'generation_prompt') {
-      await useStore.getState().updateGenerationPrompt(renamingId, { name });
-    } else if (renamingType === 'system_prompt') {
-      await useStore.getState().updateSystemPrompt(renamingId, { name });
-    } else if (renamingType === 'slide_template') {
-      await useStore.getState().updateSlideTemplate(renamingId, { name });
+
+    const isProgramResource = programResourceTypes.has(renamingType);
+    if (isProgramResource && name !== renamingOriginalName) {
+      if (!confirm('Renaming a program resource may break pipelines or prompts that reference it by name. Continue?')) {
+        setRenamingId(null);
+        setRenamingType(null);
+        return;
+      }
+    }
+
+    try {
+      if (renamingType === 'folder') {
+        await renameFolder(renamingId, name);
+      } else if (renamingType === 'resource') {
+        await useStore.getState().updateResource(renamingId, { name } as any);
+      } else if (renamingType === 'generation_prompt') {
+        await useStore.getState().updateGenerationPrompt(renamingId, { name });
+      } else if (renamingType === 'system_prompt') {
+        await useStore.getState().updateSystemPrompt(renamingId, { name });
+      } else if (renamingType === 'output_format') {
+        await useStore.getState().updateOutputFormat(renamingId, { name });
+      } else if (renamingType === 'generation_pipeline') {
+        await useStore.getState().updateGenerationPipeline(renamingId, { name });
+      }
+    } catch (err: any) {
+      alert(err.message || 'Rename failed');
     }
     setRenamingId(null);
     setRenamingType(null);
@@ -81,7 +103,8 @@ export function TreePanel() {
     else if (targetType === 'resource') await deleteResource(target.id);
     else if (targetType === 'generation_prompt') await deleteGenerationPrompt(target.id);
     else if (targetType === 'system_prompt') await deleteSystemPrompt(target.id);
-    else if (targetType === 'slide_template') await deleteSlideTemplate(target.id);
+    else if (targetType === 'output_format') await deleteOutputFormat(target.id);
+    else if (targetType === 'generation_pipeline') await deleteGenerationPipeline(target.id);
     closeContextMenu();
   };
 
@@ -105,9 +128,12 @@ export function TreePanel() {
     } else if (targetType === 'system_prompt') {
       const source = await api.systemPrompts.get(target.id);
       await createSystemPrompt({ name: `Copy of ${source.name}`, content: source.content });
-    } else if (targetType === 'slide_template') {
-      const source = await api.slideTemplates.get(target.id);
-      await createSlideTemplate({ name: `Copy of ${source.name}`, templateData: source.templateData });
+    } else if (targetType === 'output_format') {
+      const source = await api.outputFormats.get(target.id);
+      await createOutputFormat({ name: `Copy of ${source.name}`, content: source.content });
+    } else if (targetType === 'generation_pipeline') {
+      const source = await api.generationPipelines.get(target.id);
+      await createGenerationPipeline({ name: `Copy of ${source.name}`, pipelineData: source.pipelineData });
     }
 
     closeContextMenu();
@@ -211,7 +237,7 @@ export function TreePanel() {
             onDragEnd={handleDragEnd}
           >
             <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-              {resource.resourceType === 'presentation' ? (
+              {isPresentation(resource) ? (
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" />
               ) : (
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -267,6 +293,40 @@ export function TreePanel() {
     </div>
   );
 
+  const renderGroupedProgramItems = <T extends { id: string; name: string; folder?: string | null }>(
+    items: T[],
+    type: string,
+    sectionPrefix: string,
+    getSetTarget: (item: T) => () => void,
+    getIsActive: (item: T) => boolean,
+  ) => {
+    const ungrouped = items.filter((item) => !item.folder);
+    const folderNames = [...new Set(items.map((item) => item.folder).filter(Boolean))] as string[];
+
+    return (
+      <>
+        {ungrouped.map((item) => renderProgramItem(item, type, getSetTarget(item), getIsActive(item)))}
+        {folderNames.map((folderName) => {
+          const folderKey = `${sectionPrefix}-folder-${folderName}`;
+          const folderItems = items.filter((item) => item.folder === folderName);
+          return (
+            <div key={folderKey} className="ml-3">
+              <div className="tree-item" onClick={() => toggleSection(folderKey)}>
+                <svg className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expandedSections.has(folderKey) ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+                <span className="truncate text-gray-600 text-sm">{folderName}</span>
+              </div>
+              {expandedSections.has(folderKey) && folderItems.map((item) =>
+                renderProgramItem(item, type, getSetTarget(item), getIsActive(item))
+              )}
+            </div>
+          );
+        })}
+      </>
+    );
+  };
+
   const SectionHeader = ({ id, label, onAdd, rightActions }: { id: string; label: string; onAdd?: () => void; rightActions?: React.ReactNode }) => (
     <div className="flex items-center justify-between group">
       <div className="tree-item flex-1" onClick={() => toggleSection(id)}>
@@ -297,24 +357,33 @@ export function TreePanel() {
           {expandedSections.has('program') && (
             <div className="ml-3 space-y-0.5">
               <SectionHeader id="gen-prompts" label="Generation Prompts" onAdd={() => createGenerationPrompt({ name: 'New Prompt', content: '' })} />
-              {expandedSections.has('gen-prompts') && generationPrompts.map((p) =>
-                renderProgramItem(p, 'generation_prompt', () => setEditorTarget({ type: 'generation_prompt', item: p }), editorTarget.type === 'generation_prompt' && editorTarget.item.id === p.id)
+              {expandedSections.has('gen-prompts') && renderGroupedProgramItems(
+                generationPrompts, 'generation_prompt', 'gen-prompts',
+                (p) => () => setEditorTarget({ type: 'generation_prompt', item: p }),
+                (p) => editorTarget.type === 'generation_prompt' && editorTarget.item.id === p.id,
               )}
 
               <SectionHeader id="sys-prompts" label="System Prompts" onAdd={() => createSystemPrompt({ name: 'New System Prompt', content: '' })} />
-              {expandedSections.has('sys-prompts') && systemPrompts.map((p) =>
-                renderProgramItem(p, 'system_prompt', () => setEditorTarget({ type: 'system_prompt', item: p }), editorTarget.type === 'system_prompt' && editorTarget.item.id === p.id)
+              {expandedSections.has('sys-prompts') && renderGroupedProgramItems(
+                systemPrompts, 'system_prompt', 'sys-prompts',
+                (p) => () => setEditorTarget({ type: 'system_prompt', item: p }),
+                (p) => editorTarget.type === 'system_prompt' && editorTarget.item.id === p.id,
               )}
 
-              <SectionHeader id="templates" label="Slide Templates" onAdd={() => createSlideTemplate({
-                name: 'New Template',
-                templateData: {
-                  title: 'New Template', theme: { backgroundColor: '#FFFFFF', titleColor: '#1A1A2E', accentColor: '#2563EB', textColor: '#374151', fontFamily: 'Inter' },
-                  slides: [{ id: crypto.randomUUID(), title: 'Title Slide', blocks: [{ type: 'text', content: 'Subtitle' }], notes: '' }],
-                } as any
+              <SectionHeader id="output-formats" label="Output Formats" onAdd={() => createOutputFormat({
+                name: 'New Format',
+                content: '',
               })} />
-              {expandedSections.has('templates') && slideTemplates.map((t) =>
-                renderProgramItem(t, 'slide_template', () => setEditorTarget({ type: 'slide_template', item: t }), editorTarget.type === 'slide_template' && editorTarget.item.id === t.id)
+              {expandedSections.has('output-formats') && outputFormats.map((f) =>
+                renderProgramItem(f, 'output_format', () => setEditorTarget({ type: 'output_format', item: f }), editorTarget.type === 'output_format' && editorTarget.item.id === f.id)
+              )}
+
+              <SectionHeader id="pipelines" label="Generation Pipelines" onAdd={() => createGenerationPipeline({
+                name: 'New Pipeline',
+                pipelineData: { steps: [] } as any,
+              })} />
+              {expandedSections.has('pipelines') && generationPipelines.map((p) =>
+                renderProgramItem(p, 'generation_pipeline', () => setEditorTarget({ type: 'generation_pipeline', item: p }), editorTarget.type === 'generation_pipeline' && editorTarget.item.id === p.id)
               )}
             </div>
           )}
@@ -323,9 +392,6 @@ export function TreePanel() {
         <div className="h-px bg-gray-200 my-2" />
 
         {/* Project Selector */}
-        <div className="px-2 pb-1">
-          <span className="font-medium text-gray-700 text-sm">Project</span>
-        </div>
         <div className="px-2 pb-1">
           <div className="flex items-center gap-1">
             <select
@@ -341,7 +407,8 @@ export function TreePanel() {
             <button
               className="btn-icon"
               onClick={async () => {
-                const p = await createProject('New Project');
+                const id = Date.now().toString(36).slice(-5);
+                const p = await createProject(`Project ${id}`);
                 setCurrentProject(p.id);
               }}
               title="New project"
@@ -367,7 +434,7 @@ export function TreePanel() {
         {/* Project Tree */}
         {currentProjectId && (
           <div>
-            <SectionHeader id="project-resources" label="Project Resources" rightActions={
+            <SectionHeader id="project-resources" label={`${projects.find((p) => p.id === currentProjectId)?.name ?? 'Project'} - Resources`} rightActions={
               <>
                 <button
                   className="btn-icon"

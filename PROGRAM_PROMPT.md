@@ -2,7 +2,7 @@
 
 ## Overview
 
-Build a full-stack web application for creating, editing, and generating presentation slide decks. The application is organized around **projects** — each project holds source files, generated presentations, and edited presentations. A set of **program-level resources** (generation prompts, system prompts, and slide templates) are shared across all projects.
+Build a full-stack web application for creating, editing, and generating presentation slide decks. The application is organized around **projects** — each project holds source files, generated presentations, and edited presentations. A set of **program-level resources** (generation prompts, system prompts, output formats, and generation pipelines) are shared across all projects.
 
 Users can:
 - Upload source material (any text-based file) into a project
@@ -21,8 +21,14 @@ Users can:
 SlideCreator/
 ├── database/                    # Database scripts (source of truth for schema)
 │   ├── 01_schema.sql            # DROP + CREATE all tables
-│   ├── 02_seed.sql              # Default seed data (upserts)
-│   └── setup.sh                 # Runs SQL scripts + prisma generate
+│   ├── seed.ts                  # Node.js seed script (reads seeds/ + upserts via Prisma)
+│   ├── seeds/                   # Seed content files
+│   │   ├── manifest.json        # Maps UUIDs to files + metadata
+│   │   ├── output_formats/      # Format schema definitions (*.md)
+│   │   ├── generation_prompts/  # Generation prompt content (*.md)
+│   │   ├── system_prompts/      # System prompt content (*.md)
+│   │   └── generation_pipelines/ # Pipeline definitions (*.json)
+│   └── setup.sh                 # Runs schema SQL + prisma generate + seed script
 │
 ├── server/                      # Backend (Express + Prisma)
 │   ├── prisma/
@@ -30,15 +36,19 @@ SlideCreator/
 │   ├── src/
 │   │   ├── index.ts             # Express app entry point
 │   │   ├── lib/
-│   │   │   └── prisma.ts        # Prisma client singleton
+     │   │   │   ├── prisma.ts        # Prisma client singleton
+     │   │   │   ├── checkNameUnique.ts # Cross-table name uniqueness enforcement
+     │   │   │   └── resolveVariables.ts # Template variable interpolation (with 30s cache)
 │   │   └── routes/
 │   │       ├── projects.ts
 │   │       ├── folders.ts
 │   │       ├── resources.ts
 │   │       ├── generationPrompts.ts
 │   │       ├── systemPrompts.ts
-│   │       ├── slideTemplates.ts
-│   │       ├── generate.ts      # OpenAI integration
+│   │       ├── outputFormats.ts
+│   │       ├── generationPipelines.ts
+│   │       ├── pipelineRuns.ts   # Pipeline execution + polling
+│   │       ├── generate.ts      # OpenAI integration (single generation)
 │   │       └── upload.ts        # Multipart file upload (multer)
 │   ├── .env.example             # Template for environment variables
 │   ├── package.json
@@ -90,7 +100,12 @@ SlideCreator/
 Application config lives in `server/.env` (copied from `server/.env.example`):
 
 ```env
-# Prisma database connection (used by the app at runtime)
+# Database connection
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=slide_creator
+DB_USER=slide_app
+DB_PASSWORD=slide_app
 DATABASE_URL="postgresql://slide_app:slide_app@localhost:5432/slide_creator?schema=public"
 
 # OpenAI
@@ -101,6 +116,8 @@ OPENAI_TEMPERATURE="0.7"
 # Server
 PORT=3001
 ```
+
+> Only `DATABASE_URL`, the `OPENAI_*` variables, and `PORT` are read by the application. The `DB_*` variables are included as a convenience reference for the values encoded in `DATABASE_URL`.
 
 Database admin credentials (for creating the DB, running schema scripts) are **not** stored in `.env`. They are passed directly to `psql` when running the setup script — see `database/README.md`.
 
@@ -113,8 +130,10 @@ Database management uses **raw SQL scripts** in the `database/` folder — not P
 | File | Purpose |
 |------|---------|
 | `01_schema.sql` | Drops all tables (`CASCADE`) then recreates them. Defines indexes. |
-| `02_seed.sql` | Inserts default data using `ON CONFLICT ... DO UPDATE` for idempotency. |
-| `setup.sh` | Runs both SQL files via `psql`, then runs `npx prisma generate`. Uses standard psql auth (CLI flags, `PGUSER`/`PGPASSWORD` env vars, `~/.pgpass`). |
+| `seed.ts` | Node.js script that reads `seeds/manifest.json` + content files, upserts via Prisma. |
+| `seeds/` | Directory tree with seed content files (prompts as `.md`, pipelines as `.json`). |
+| `seeds/manifest.json` | Maps each seed entry (UUID, name, metadata) to its content file path. |
+| `setup.sh` | Runs `01_schema.sql` via `psql`, then `npx prisma generate`, then `npx tsx database/seed.ts`. |
 | `README.md` | Instructions for creating the database, a dedicated app user, applying the schema, and updating after model changes. |
 
 **Typical usage:**
@@ -134,15 +153,16 @@ The Prisma schema at `server/prisma/schema.prisma` must be kept in sync with `01
 
 ### Program-Level Resources
 
-These are global — accessible from any project.
+These are global — accessible from any project. **All program resource names must be unique across all four types** (generation prompts, system prompts, output formats, generation pipelines). This allows resources to be referenced by name throughout the system — in pipeline step definitions and `{{name}}` template variables. The backend enforces cross-table uniqueness on create and update operations. Renaming a program resource triggers a user-facing warning since it may break references.
 
 **`generation_prompts`** — prompts that instruct the LLM how to generate a presentation from source material.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid, PK | default `gen_random_uuid()` |
-| name | text, not null | display name |
-| content | text, not null | the prompt text |
+| name | text, not null, unique | display name (used as identifier in pipeline references) |
+| content | text, not null | the prompt text (supports `{{name}}` output format variables) |
+| folder | text, nullable | category/folder for grouping in tree |
 | created_at | timestamptz | default `now()` |
 | updated_at | timestamptz | default `now()` |
 
@@ -151,20 +171,23 @@ These are global — accessible from any project.
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid, PK | default `gen_random_uuid()` |
-| name | text, not null | |
+| name | text, not null, unique | display name (used as identifier in pipeline references) |
 | content | text, not null | |
+| folder | text, nullable | category/folder for grouping in tree |
 | created_at | timestamptz | default `now()` |
 | updated_at | timestamptz | default `now()` |
 
-**`slide_templates`** — reusable presentation templates (stored as the JSON slide model, representing a starting structure and theme).
+**`output_formats`** — reusable format schema definitions referenced in prompts via `{{name}}` template variables. Defines the expected JSON structure for LLM output.
 
 | Column | Type | Notes |
 |--------|------|-------|
 | id | uuid, PK | default `gen_random_uuid()` |
-| name | text, not null | |
-| template_data | jsonb, not null | JSON slide model (theme + slide structure) |
+| name | text, not null, unique | display name, also used as the template variable identifier |
+| content | text, not null | the format schema definition text |
 | created_at | timestamptz | default `now()` |
 | updated_at | timestamptz | default `now()` |
+
+Prompts can reference output formats using `{{name}}` syntax (e.g., `{{Presentation schema}}`). The backend resolves these variables before sending prompts to the LLM, using the `resolveVariables()` utility in `server/src/lib/resolveVariables.ts`.
 
 ### Projects and Resources
 
@@ -206,18 +229,87 @@ Indexes: `idx_folders_project` on `project_id`, `idx_folders_parent` on `parent_
 
 Indexes: `idx_resources_project` on `project_id`, `idx_resources_folder` on `folder_id`.
 
+### Generation Pipelines
+
+**`generation_pipelines`** — multi-step generation workflows (program-level resource).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid, PK | default `gen_random_uuid()` |
+| name | text, not null, unique | display name |
+| pipeline_data | jsonb, not null | pipeline definition (steps array, references prompts by name) |
+| created_at | timestamptz | default `now()` |
+| updated_at | timestamptz | default `now()` |
+
+The `pipeline_data` JSON follows this schema:
+
+```typescript
+interface PipelineDefinition {
+  steps: PipelineStep[];
+}
+
+interface PipelineStep {
+  name: string;
+  generationPrompt?: string;      // reference existing prompt by name
+  generationPromptInline?: string; // OR define prompt text inline
+  systemPrompt?: string;           // reference existing system prompt by name
+  systemPromptInline?: string;
+  sources: StepSource[];           // what data to feed this step
+  saveToProject: boolean;          // persist output as a project resource
+  outputNameTemplate?: string;     // supports {{project}}, {{step}}, {{timestamp}}
+  isFinal?: boolean;               // marks the pipeline's final output
+}
+
+type StepSource =
+  | { type: 'project_resources' }              // user-selected source files
+  | { type: 'step_output'; step: number }      // output of step N (0-based)
+  | { type: 'all_step_outputs' };              // all previous step outputs
+```
+
+**`pipeline_runs`** — tracks execution of a pipeline (for polling-based progress).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| id | uuid, PK | default `gen_random_uuid()` |
+| pipeline_id | uuid, FK → generation_pipelines | |
+| project_id | uuid, FK → projects | ON DELETE CASCADE |
+| status | text, not null | `'running'`, `'completed'`, `'failed'` |
+| current_step | integer, not null | 0-based index of current step |
+| total_steps | integer, not null | total number of steps |
+| step_results | jsonb, not null | array of per-step status objects |
+| output_folder_id | uuid, FK → folders, nullable | ON DELETE SET NULL |
+| source_resource_ids | jsonb, not null | array of source resource UUIDs |
+| final_resource_id | uuid, FK → resources, nullable | ON DELETE SET NULL |
+| error | text, nullable | error message if failed |
+| started_at | timestamptz | default `now()` |
+| completed_at | timestamptz, nullable | |
+
+Indexes: `idx_pipeline_runs_project` on `project_id`, `idx_pipeline_runs_status` on `status`.
+
 ### Seed Data
 
-The `02_seed.sql` script inserts:
+Seed data is stored as individual files in `database/seeds/`, managed by `database/seeds/manifest.json`, and loaded by `database/seed.ts` (a Node.js script using Prisma upserts). The manifest maps each entry's UUID, name, and metadata to a content file.
 
-- **One default generation prompt** (`00000000-...001`) — instructs the LLM to create 8–15 slides, use various block types, and return valid JSON matching the `PresentationData` schema.
-- **One default system prompt** (`00000000-...002`) — "You are a presentation design assistant..."
-- **Two slide templates**: Dark theme (`00000000-...003`) and Light theme (`00000000-...004`), each with a title slide and a content slide.
+The seed script inserts:
 
-### JSON Slide Model (stored in `content_json` and `template_data`)
+- **Two output formats**:
+  - "Presentation schema" — the SlideCreator Presentation Format v1 JSON schema
+  - "Critique schema" — the SlideCreator Critique Format v1 JSON schema
+- **One default generation prompt** — "Default generation prompt", uses `{{Presentation schema}}` variable
+- **One default system prompt** — "Default system prompt"
+- **Three pipeline generation prompts** (folder: "Pipeline") — use `{{Presentation schema}}` or `{{Critique schema}}` variables:
+  - "Critique presentation"
+  - "Improve from critique"
+  - "Select best presentation"
+- **One pipeline system prompt** (folder: "Pipeline"):
+  - "Presentation critic"
+- **One default generation pipeline** — "Iterative refinement pipeline" with 3 steps referencing prompts by name: Initial Draft, Critique, Improved Version
+
+### JSON Slide Model (stored in `content_json`)
 
 ```typescript
 interface PresentationData {
+  _format?: string;  // e.g. "slidecreator/presentation/v1"
   title: string;
   theme: Theme;
   slides: Slide[];
@@ -255,8 +347,8 @@ interface Theme {
 - Application logo (left) — custom `logo.png` image loaded from `client/public/logo.png`
 - Current project name (editable inline — click to edit, Enter to save, Escape to cancel)
 - **"Generate"** button — prominent blue button, visible when a project is selected. Opens the generation dialog.
-- **"Export PPTX"** button — visible when a presentation or slide template is open
-- **"Present"** button — visible when a presentation or slide template is open
+- **"Export PPTX"** button — visible when a presentation is open
+- **"Present"** button — visible when a presentation is open
 - **Hamburger menu** (☰, far right) — dropdown menu with app-level actions. Currently contains **Manual**, which opens an in-app quick-reference guide in a modal overlay with a PDF download option.
 
 ### Left Panel: Tree View (`TreePanel.tsx`)
@@ -267,37 +359,42 @@ The tree has two root sections, plus a project selector:
 
 **1. Program Resources (top section, always visible regardless of selected project)**
 
-A collapsible section containing three collapsible subsections, each with a [+] button to add new items:
+A collapsible section containing four collapsible subsections, each with a [+] button to add new items. Generation prompts and system prompts support a `folder` field for grouping — items with the same folder value are grouped under a collapsible sub-node:
 ```
 ▶ Program Resources
   ▶ Generation Prompts      [+ button to add new]
     📄 Default generation prompt
-    ...
+    ▶ Pipeline/
+      📄 Critique presentation
+      📄 Improve from critique
+      📄 Select best presentation
   ▶ System Prompts           [+ button to add new]
     📄 Default system prompt
-    ...
-  ▶ Slide Templates           [+ button to add new]
-    📄 Dark theme template
-    📄 Light theme template
-    ...
+    ▶ Pipeline/
+      📄 Presentation critic
+  ▶ Output Formats            [+ button to add new]
+    📄 Presentation schema
+    📄 Critique schema
+  ▶ Generation Pipelines     [+ button to add new]
+    📄 Iterative refinement pipeline
 ```
 
 **2. Project selector**
 
-A "Project" label followed by a dropdown to switch between projects, a [+] button to create new, and a delete button. Separated from Program Resources by a divider.
+A "Project" label followed by a dropdown to switch between projects, a [+] button to create new (named "Project [5-char-id]" using a base-36 timestamp), and a delete button. Separated from Program Resources by a divider.
 
 **3. Project Resources (below, scoped to the selected project)**
 
-A collapsible "Project Resources" root section (using `SectionHeader` with id `project-resources`). The "New folder" and "Upload file" icon buttons appear in the section header row (visible on hover via `rightActions` prop on `SectionHeader`), followed by the recursive project file tree:
+A collapsible "[Project Name] - Resources" root section (using `SectionHeader` with id `project-resources`, label dynamically includes the project name). The "New folder" and "Upload file" icon buttons appear in the section header row (visible on hover via `rightActions` prop on `SectionHeader`), followed by the recursive project file tree:
 
 ```
-▶ Project Resources  [📁+] [📤] (hover to reveal)
-  ▶ Source Material
+▶ My Project - Resources  [📁+] [📤] (hover to reveal)
+  ▶ Imported/
     📄 uploaded-report.md
   📄 My edited deck.json
 ```
 
-**File upload** supports selecting multiple files at once. When more than one file is selected, a confirmation modal asks "Really upload X files?" before proceeding. The store provides both `uploadFile` (single) and `uploadFiles` (batch, single reload) methods.
+**File upload** supports selecting multiple files at once. When more than one file is selected, a confirmation modal asks "Really upload X files?" before proceeding. The store provides both `uploadFile` (single) and `uploadFiles` (batch, single reload) methods. Uploaded files are automatically placed in an "Imported" folder at the project root — the folder is created on first upload if it doesn't already exist.
 
 **Tree interactions:**
 - Click a resource to open it in the editor panel
@@ -316,7 +413,7 @@ The editor panel changes based on what is selected in the tree:
 
 **When a generation prompt or system prompt is selected:** same textarea view with the prompt name shown as a label above.
 
-**When a slide template or presentation is selected:** the visual slide editor (described below).
+**When a presentation is selected:** the visual slide editor (described below).
 
 ---
 
@@ -344,11 +441,13 @@ The editor panel changes based on what is selected in the tree:
 
 ---
 
-## Generation Feature (`GenerateDialog.tsx`, `server/src/routes/generate.ts`)
+## Generation Feature (`GenerateDialog.tsx`, `server/src/routes/generate.ts`, `server/src/routes/pipelineRuns.ts`)
 
 ### The "Generate" Button
 
-Clicking "Generate" in the top bar opens a modal dialog with the following sections:
+Clicking "Generate" in the top bar opens a modal dialog. The dialog has a **mode toggle** at the top: "Single Generation" | "Pipeline".
+
+#### Single Generation Mode
 
 **1. Source Material Selection**
 - A checklist of all resources in the current project
@@ -357,21 +456,34 @@ Clicking "Generate" in the top bar opens a modal dialog with the following secti
 - Resource type shown as a badge ("Source" or "Presentation")
 
 **2. Generation Prompt Selection**
-- A dropdown listing all generation prompts
+- A dropdown listing all generation prompts (grouped by folder in the dropdown labels)
 - Preview of the selected prompt text (first 300 chars) below the dropdown
 
 **3. System Prompt Selection**
-- A dropdown listing all system prompts
+- A dropdown listing all system prompts (grouped by folder in the dropdown labels)
 - Preview of the selected prompt text below the dropdown
 
-**4. Slide Template Selection (optional)**
-- A dropdown listing all slide templates, plus a "None" option
-
-**5. Output Settings**
+**4. Output Settings**
 - **Output folder:** a dropdown of folders in the current project, plus "Project root"
 - **Output name:** a text input, default: "[Project Name] - Presentation - Generated - YYMMDD:HH:MM:SS" (24-hour clock)
 
-**6. "Generate" confirmation button** at the bottom, "Cancel" button beside it.
+**5. "Generate" confirmation button** at the bottom, "Cancel" button beside it.
+
+#### Pipeline Mode
+
+**1. Source Material Selection** — same as single mode
+
+**2. Pipeline Selection**
+- A dropdown listing all generation pipelines
+- Preview showing step count and step names (e.g., "3 steps: Initial Draft → Critique → Improved Version")
+
+**3. Output Folder** — where saved step outputs go
+
+**4. Pipeline Progress** — appears after clicking "Run Pipeline":
+- A list of steps with status indicators (pending/running/completed/failed)
+- Updated via polling (`GET /api/pipeline-runs/:id` every 2 seconds)
+- On completion: loads project data, opens the final resource, closes dialog
+- On failure: shows error, keeps dialog open
 
 ### Generation Process (OpenAI API)
 
@@ -384,7 +496,6 @@ When the user confirms generation:
      "sourceResourceIds": ["uuid", ...],
      "generationPromptId": "uuid",
      "systemPromptId": "uuid",
-     "slideTemplateId": "uuid | null",
      "outputFolderId": "uuid | null",
      "outputName": "string"
    }
@@ -392,7 +503,7 @@ When the user confirms generation:
 
 2. **Backend** (`server/src/routes/generate.ts`):
    - Fetches all referenced records from the database in parallel
-   - Assembles the user message: each source prefixed with `=== SOURCE: [name] ===`, optional template block, then the generation prompt content last
+   - Assembles the user message: each source prefixed with `=== SOURCE: [name] ===`, then the generation prompt content last
    - Calls the OpenAI API via the **OpenAI SDK** (`openai` package):
      - Model: `process.env.OPENAI_MODEL` (default `gpt-4o`)
      - Temperature: `process.env.OPENAI_TEMPERATURE` (default `0.7`)
@@ -408,10 +519,24 @@ When the user confirms generation:
    - Generate and Cancel buttons disabled during request
    - On error: error message shown in the dialog, dialog stays open for retry
 
+### Pipeline Execution Process
+
+When a pipeline is run:
+
+1. **Frontend** sends `POST /api/pipeline-runs` with `{ pipelineId, projectId, sourceResourceIds, outputFolderId }`.
+2. **Backend** creates a `pipeline_runs` row with `status: 'running'` and returns it immediately (non-blocking).
+3. **Backend** executes steps sequentially in a background async function:
+   - For each step: resolves system prompt and generation prompt (by ID from DB or inline text), assembles user message from declared sources (`project_resources`, `step_output`, `all_step_outputs`), calls the OpenAI API.
+   - If `saveToProject: true`, saves the response as a project resource. Auto-detects whether the response is a presentation (has `slides` array) or raw text.
+   - Updates the `pipeline_runs` row after each step (current_step, step_results).
+   - On error: marks the step as failed, sets `status: 'failed'` on the run, and stops.
+4. **Frontend** polls `GET /api/pipeline-runs/:id` every 2 seconds to update the progress UI.
+5. On completion: frontend reloads project data, opens the final resource (the step marked `isFinal`), closes the dialog.
+
 ### OpenAI API Key
 
 - Stored in `server/.env` as `OPENAI_API_KEY`
-- The frontend never sees the key — all calls go through `POST /api/generate`
+- The frontend never sees the key — all calls go through `POST /api/generate` or `POST /api/pipeline-runs`
 
 ---
 
@@ -449,10 +574,15 @@ When the user confirms generation:
 **Program-Level Resources:**
 - `GET/POST /api/generation-prompts`, `GET/PATCH/DELETE /api/generation-prompts/:id`
 - `GET/POST /api/system-prompts`, `GET/PATCH/DELETE /api/system-prompts/:id`
-- `GET/POST /api/slide-templates`, `GET/PATCH/DELETE /api/slide-templates/:id`
+- `GET/POST /api/output-formats`, `GET/PATCH/DELETE /api/output-formats/:id`
+- `GET/POST /api/generation-pipelines`, `GET/PATCH/DELETE /api/generation-pipelines/:id`
 
 **Generation:**
-- `POST /api/generate` — trigger AI generation (see Generation Feature section)
+- `POST /api/generate` — trigger single AI generation (see Generation Feature section)
+
+**Pipeline Execution:**
+- `POST /api/pipeline-runs` — start a pipeline run (returns run ID immediately, executes in background). Body: `{ pipelineId, projectId, sourceResourceIds, outputFolderId }`
+- `GET /api/pipeline-runs/:id` — poll for pipeline run status (returns current step, step results, status)
 
 **File Upload:**
 - `POST /api/projects/:projectId/upload` — multipart file upload via multer (in-memory storage, 10MB max). Reads file content as UTF-8 text, creates a resource with `resource_type: 'source_file'`. Accepts optional `folderId` form field.
@@ -516,7 +646,7 @@ All presets use `fontFamily: 'Inter'`.
 
 Themes apply globally to all slides in a presentation. The theme is stored in the JSON slide model and read by both the slide canvas (inline styles) and the PPTX export.
 
-Users can create custom themes via the slide template system.
+Themes can be switched via the slide editor toolbar dropdown.
 
 ---
 
@@ -524,7 +654,7 @@ Users can create custom themes via the slide template system.
 
 Single Zustand store holding all application state:
 
-- **Data:** `projects`, `currentProjectId`, `folders`, `resources`, `generationPrompts`, `systemPrompts`, `slideTemplates`
+- **Data:** `projects`, `currentProjectId`, `folders`, `resources`, `generationPrompts`, `systemPrompts`, `outputFormats`, `generationPipelines`
 - **UI state:** `editorTarget` (what's open in the editor), `generateDialogOpen`, `presentationMode`
 - **Actions:** async functions for all CRUD operations that call the API and refresh local state
 - **`updatePresentationData`:** optimistic local update for the slide editor (updates both the `resources` array and the `editorTarget` in one shot)
@@ -536,7 +666,8 @@ type EditorTarget =
   | { type: 'resource'; resource: Resource }
   | { type: 'generation_prompt'; item: GenerationPrompt }
   | { type: 'system_prompt'; item: SystemPrompt }
-  | { type: 'slide_template'; item: SlideTemplate };
+  | { type: 'output_format'; item: OutputFormat }
+  | { type: 'generation_pipeline'; item: GenerationPipeline };
 ```
 
 ---
@@ -547,7 +678,7 @@ A thin wrapper around `fetch` with:
 - Base URL: `/api` (proxied to backend via Vite dev server config)
 - Automatic `Content-Type: application/json` headers
 - Error extraction from response JSON
-- Organized by entity: `api.projects.*`, `api.folders.*`, `api.resources.*`, etc.
+- Organized by entity: `api.projects.*`, `api.folders.*`, `api.resources.*`, `api.outputFormats.*`, `api.generationPipelines.*`, `api.pipelineRuns.*`, etc.
 - `api.upload()` uses `FormData` for multipart file upload (no JSON content-type header)
 
 ---

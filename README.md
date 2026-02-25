@@ -45,15 +45,17 @@ SlideCreator/
 ├── database/                # Database scripts & setup docs
 │   ├── README.md            # How to create DB, apply schema, update models
 │   ├── 01_schema.sql        # Table definitions (DROP + CREATE)
-│   ├── 02_seed.sql          # Default seed data (upserts)
-│   └── setup.sh             # Run SQL scripts + prisma generate
+│   ├── seed.ts              # Seed script (reads seeds/ + upserts via Prisma)
+│   ├── seeds/               # Seed content files (prompts, pipelines, output formats)
+│   │   └── manifest.json    # Maps UUIDs to content files + metadata
+│   └── setup.sh             # Run schema SQL + prisma generate + seed script
 │
 ├── server/                  # Backend (Express + Prisma + PostgreSQL)
 │   ├── prisma/
 │   │   └── schema.prisma    # Prisma ORM schema (must match 01_schema.sql)
 │   ├── src/
 │   │   ├── index.ts         # Express app entry point
-│   │   ├── lib/prisma.ts    # Prisma client singleton
+│   │   ├── lib/             # Prisma client, template variable resolution, name uniqueness
 │   │   └── routes/          # API route handlers
 │   ├── .env.example         # Template for environment variables
 │   └── package.json
@@ -78,7 +80,10 @@ SlideCreator/
 - **Text editor** — edit source files, generation prompts, and system prompts
 - **Slide editor** — visual WYSIWYG editor with contenteditable blocks (text, bullets, numbered lists, tables, quotes)
 - **Theme presets** — Dark, Light, Warm, Midnight — instantly switchable
-- **AI generation** — generate presentations from source material via OpenAI API
+- **AI generation** — generate presentations from source material via OpenAI API (single generation or multi-step pipelines)
+- **Generation pipelines** — define multi-step workflows (e.g., generate, critique, improve) with polling-based progress
+- **Output formats** — reusable schema definitions referenced in prompts via `{{name}}` template variables
+- **Prompt folders** — organize generation prompts and system prompts into collapsible categories
 - **PPTX export** — download native editable PowerPoint files
 - **Presentation mode** — fullscreen slideshow with keyboard navigation and speaker notes
 - **In-app manual** — quick-reference guide accessible from the ☰ menu, with PDF download

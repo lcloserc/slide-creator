@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { api } from '../lib/api';
 import type {
   Project, Folder, Resource, GenerationPrompt, SystemPrompt,
-  SlideTemplate, EditorTarget, PresentationData,
+  OutputFormat, GenerationPipeline, EditorTarget, PresentationData,
 } from '../types';
 
 interface AppState {
@@ -12,7 +12,8 @@ interface AppState {
   resources: Resource[];
   generationPrompts: GenerationPrompt[];
   systemPrompts: SystemPrompt[];
-  slideTemplates: SlideTemplate[];
+  outputFormats: OutputFormat[];
+  generationPipelines: GenerationPipeline[];
   editorTarget: EditorTarget;
   generateDialogOpen: boolean;
   presentationMode: boolean;
@@ -41,15 +42,25 @@ interface AppState {
   createSystemPrompt: (data: Partial<SystemPrompt>) => Promise<void>;
   updateSystemPrompt: (id: string, data: Partial<SystemPrompt>) => Promise<void>;
   deleteSystemPrompt: (id: string) => Promise<void>;
-  createSlideTemplate: (data: Partial<SlideTemplate>) => Promise<void>;
-  updateSlideTemplate: (id: string, data: Partial<SlideTemplate>) => Promise<void>;
-  deleteSlideTemplate: (id: string) => Promise<void>;
+  createOutputFormat: (data: Partial<OutputFormat>) => Promise<void>;
+  updateOutputFormat: (id: string, data: Partial<OutputFormat>) => Promise<void>;
+  deleteOutputFormat: (id: string) => Promise<void>;
+  createGenerationPipeline: (data: Partial<GenerationPipeline>) => Promise<void>;
+  updateGenerationPipeline: (id: string, data: Partial<GenerationPipeline>) => Promise<void>;
+  deleteGenerationPipeline: (id: string) => Promise<void>;
 
   setEditorTarget: (target: EditorTarget) => void;
   setGenerateDialogOpen: (open: boolean) => void;
   setPresentationMode: (mode: boolean) => void;
 
   updatePresentationData: (resourceId: string, data: PresentationData) => void;
+}
+
+async function ensureImportedFolder(projectId: string, get: () => AppState): Promise<string> {
+  const existing = get().folders.find((f) => f.name === 'Imported' && f.parentId === null);
+  if (existing) return existing.id;
+  const folder = await api.folders.create(projectId, 'Imported');
+  return folder.id;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -59,7 +70,8 @@ export const useStore = create<AppState>((set, get) => ({
   resources: [],
   generationPrompts: [],
   systemPrompts: [],
-  slideTemplates: [],
+  outputFormats: [],
+  generationPipelines: [],
   editorTarget: { type: 'none' },
   generateDialogOpen: false,
   presentationMode: false,
@@ -153,26 +165,29 @@ export const useStore = create<AppState>((set, get) => ({
   uploadFile: async (file, folderId) => {
     const pid = get().currentProjectId;
     if (!pid) return;
-    await api.upload(pid, file, folderId);
+    const targetFolder = folderId ?? await ensureImportedFolder(pid, get);
+    await api.upload(pid, file, targetFolder);
     await get().loadProjectData(pid);
   },
 
   uploadFiles: async (files, folderId) => {
     const pid = get().currentProjectId;
     if (!pid) return;
+    const targetFolder = folderId ?? await ensureImportedFolder(pid, get);
     for (const file of files) {
-      await api.upload(pid, file, folderId);
+      await api.upload(pid, file, targetFolder);
     }
     await get().loadProjectData(pid);
   },
 
   loadProgramResources: async () => {
-    const [generationPrompts, systemPrompts, slideTemplates] = await Promise.all([
+    const [generationPrompts, systemPrompts, outputFormats, generationPipelines] = await Promise.all([
       api.generationPrompts.list(),
       api.systemPrompts.list(),
-      api.slideTemplates.list(),
+      api.outputFormats.list(),
+      api.generationPipelines.list(),
     ]);
-    set({ generationPrompts, systemPrompts, slideTemplates });
+    set({ generationPrompts, systemPrompts, outputFormats, generationPipelines });
   },
 
   createGenerationPrompt: async (data) => {
@@ -219,23 +234,45 @@ export const useStore = create<AppState>((set, get) => ({
     await get().loadProgramResources();
   },
 
-  createSlideTemplate: async (data) => {
-    await api.slideTemplates.create(data);
+  createOutputFormat: async (data) => {
+    await api.outputFormats.create(data);
     await get().loadProgramResources();
   },
-  updateSlideTemplate: async (id, data) => {
-    await api.slideTemplates.update(id, data);
+  updateOutputFormat: async (id, data) => {
+    await api.outputFormats.update(id, data);
     await get().loadProgramResources();
     const target = get().editorTarget;
-    if (target.type === 'slide_template' && target.item.id === id) {
-      const updated = await api.slideTemplates.get(id);
-      set({ editorTarget: { type: 'slide_template', item: updated } });
+    if (target.type === 'output_format' && target.item.id === id) {
+      const updated = await api.outputFormats.get(id);
+      set({ editorTarget: { type: 'output_format', item: updated } });
     }
   },
-  deleteSlideTemplate: async (id) => {
-    await api.slideTemplates.delete(id);
+  deleteOutputFormat: async (id) => {
+    await api.outputFormats.delete(id);
     const target = get().editorTarget;
-    if (target.type === 'slide_template' && target.item.id === id) {
+    if (target.type === 'output_format' && target.item.id === id) {
+      set({ editorTarget: { type: 'none' } });
+    }
+    await get().loadProgramResources();
+  },
+
+  createGenerationPipeline: async (data) => {
+    await api.generationPipelines.create(data);
+    await get().loadProgramResources();
+  },
+  updateGenerationPipeline: async (id, data) => {
+    await api.generationPipelines.update(id, data);
+    await get().loadProgramResources();
+    const target = get().editorTarget;
+    if (target.type === 'generation_pipeline' && target.item.id === id) {
+      const updated = await api.generationPipelines.get(id);
+      set({ editorTarget: { type: 'generation_pipeline', item: updated } });
+    }
+  },
+  deleteGenerationPipeline: async (id) => {
+    await api.generationPipelines.delete(id);
+    const target = get().editorTarget;
+    if (target.type === 'generation_pipeline' && target.item.id === id) {
       set({ editorTarget: { type: 'none' } });
     }
     await get().loadProgramResources();

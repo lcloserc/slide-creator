@@ -9,8 +9,9 @@ datasource db {
 
 model GenerationPrompt {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String
+  name      String   @unique
   content   String
+  folder    String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -19,22 +20,23 @@ model GenerationPrompt {
 
 model SystemPrompt {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name      String
+  name      String   @unique
   content   String
+  folder    String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("system_prompts")
 }
 
-model SlideTemplate {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name         String
-  templateData Json     @map("template_data")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+model OutputFormat {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String   @unique
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
-  @@map("slide_templates")
+  @@map("output_formats")
 }
 
 model Project {
@@ -43,8 +45,9 @@ model Project {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  folders   Folder[]
-  resources Resource[]
+  folders      Folder[]
+  resources    Resource[]
+  pipelineRuns PipelineRun[]
 
   @@map("projects")
 }
@@ -57,10 +60,11 @@ model Folder {
   sortOrder Int      @default(0) @map("sort_order")
   createdAt DateTime @default(now()) @map("created_at")
 
-  project  Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parent   Folder?    @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children Folder[]   @relation("FolderTree")
-  resources Resource[]
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent       Folder?       @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Folder[]      @relation("FolderTree")
+  resources    Resource[]
+  pipelineRuns PipelineRun[]
 
   @@map("folders")
 }
@@ -76,8 +80,44 @@ model Resource {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  folder  Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  folder       Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  pipelineRuns PipelineRun[] @relation("FinalResource")
 
   @@map("resources")
+}
+
+model GenerationPipeline {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name         String   @unique
+  pipelineData Json     @map("pipeline_data")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  runs PipelineRun[]
+
+  @@map("generation_pipelines")
+}
+
+model PipelineRun {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  pipelineId        String    @map("pipeline_id") @db.Uuid
+  projectId         String    @map("project_id") @db.Uuid
+  status            String    @default("running")
+  currentStep       Int       @default(0) @map("current_step")
+  totalSteps        Int       @map("total_steps")
+  stepResults       Json      @default("[]") @map("step_results")
+  outputFolderId    String?   @map("output_folder_id") @db.Uuid
+  sourceResourceIds Json      @default("[]") @map("source_resource_ids")
+  finalResourceId   String?   @map("final_resource_id") @db.Uuid
+  error             String?
+  startedAt         DateTime  @default(now()) @map("started_at")
+  completedAt       DateTime? @map("completed_at")
+
+  pipeline      GenerationPipeline @relation(fields: [pipelineId], references: [id])
+  project       Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  outputFolder  Folder?            @relation(fields: [outputFolderId], references: [id], onDelete: SetNull)
+  finalResource Resource?          @relation("FinalResource", fields: [finalResourceId], references: [id], onDelete: SetNull)
+
+  @@map("pipeline_runs")
 }

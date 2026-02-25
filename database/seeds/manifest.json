@@ -1,0 +1,61 @@
+{
+  "output_formats": [
+    {
+      "id": "00000000-0000-0000-0000-000000000040",
+      "name": "Presentation schema",
+      "file": "output_formats/slidecreator_presentation_schema.md"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000041",
+      "name": "Critique schema",
+      "file": "output_formats/slidecreator_critique_schema.md"
+    }
+  ],
+  "generation_prompts": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "name": "Default generation prompt",
+      "folder": null,
+      "file": "generation_prompts/default_generation.md"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000010",
+      "name": "Critique presentation",
+      "folder": "Pipeline",
+      "file": "generation_prompts/pipeline--critique_presentation.md"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000011",
+      "name": "Improve from critique",
+      "folder": "Pipeline",
+      "file": "generation_prompts/pipeline--improve_from_critique.md"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000012",
+      "name": "Select best presentation",
+      "folder": "Pipeline",
+      "file": "generation_prompts/pipeline--select_best.md"
+    }
+  ],
+  "system_prompts": [
+    {
+      "id": "00000000-0000-0000-0000-000000000002",
+      "name": "Default system prompt",
+      "folder": null,
+      "file": "system_prompts/default_system.md"
+    },
+    {
+      "id": "00000000-0000-0000-0000-000000000020",
+      "name": "Presentation critic",
+      "folder": "Pipeline",
+      "file": "system_prompts/pipeline--presentation_critic.md"
+    }
+  ],
+  "generation_pipelines": [
+    {
+      "id": "00000000-0000-0000-0000-000000000030",
+      "name": "Iterative refinement pipeline",
+      "file": "generation_pipelines/iterative_refinement.json"
+    }
+  ]
+}

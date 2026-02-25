@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { checkNameUnique } from '../lib/checkNameUnique';
 
 export const generationPromptsRouter = Router();
 
@@ -14,13 +15,15 @@ generationPromptsRouter.get('/', async (_req, res) => {
 
 generationPromptsRouter.post('/', async (req, res) => {
   try {
-    const { name, content } = req.body;
+    const { name, content, folder } = req.body;
+    const finalName = name || 'New Prompt';
+    await checkNameUnique(finalName);
     const prompt = await prisma.generationPrompt.create({
-      data: { name: name || 'New Prompt', content: content || '' },
+      data: { name: finalName, content: content || '', folder: folder || null },
     });
     res.status(201).json(prompt);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to create generation prompt' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to create generation prompt' });
   }
 });
 
@@ -36,17 +39,19 @@ generationPromptsRouter.get('/:id', async (req, res) => {
 
 generationPromptsRouter.patch('/:id', async (req, res) => {
   try {
-    const { name, content } = req.body;
+    const { name, content, folder } = req.body;
+    if (name !== undefined) await checkNameUnique(name, req.params.id);
     const data: Record<string, unknown> = {};
     if (name !== undefined) data.name = name;
     if (content !== undefined) data.content = content;
+    if (folder !== undefined) data.folder = folder;
     const prompt = await prisma.generationPrompt.update({
       where: { id: req.params.id },
       data,
     });
     res.json(prompt);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update generation prompt' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message || 'Failed to update generation prompt' });
   }
 });
 

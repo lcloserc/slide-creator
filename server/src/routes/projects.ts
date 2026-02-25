@@ -15,7 +15,8 @@ projectsRouter.get('/', async (_req, res) => {
 projectsRouter.post('/', async (req, res) => {
   try {
     const { name } = req.body;
-    const project = await prisma.project.create({ data: { name: name || 'New Project' } });
+    const fallback = `Project ${Date.now().toString(36).slice(-5)}`;
+    const project = await prisma.project.create({ data: { name: name || fallback } });
     res.status(201).json(project);
   } catch (err) {
     res.status(500).json({ error: 'Failed to create project' });

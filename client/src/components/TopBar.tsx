@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useStore } from '../store';
+import { isPresentation } from '../types';
 import { exportToPptx } from '../lib/pptxExport';
 
 interface TopBarProps {
@@ -23,10 +24,8 @@ export function TopBar({ onOpenManual }: TopBarProps) {
 
   const showPresentation =
     editorTarget.type === 'resource' &&
-    editorTarget.resource.resourceType === 'presentation' &&
+    isPresentation(editorTarget.resource) &&
     editorTarget.resource.contentJson;
-
-  const showSlideTemplate = editorTarget.type === 'slide_template';
 
   useEffect(() => {
     if (editing && inputRef.current) {
@@ -56,8 +55,6 @@ export function TopBar({ onOpenManual }: TopBarProps) {
   const handleExport = () => {
     if (editorTarget.type === 'resource' && editorTarget.resource.contentJson) {
       exportToPptx(editorTarget.resource.contentJson, editorTarget.resource.name);
-    } else if (editorTarget.type === 'slide_template') {
-      exportToPptx(editorTarget.item.templateData, editorTarget.item.name);
     }
   };
 
@@ -107,7 +104,7 @@ export function TopBar({ onOpenManual }: TopBarProps) {
           </button>
         )}
 
-        {(showPresentation || showSlideTemplate) && (
+        {showPresentation && (
           <>
             <button className="btn-secondary" onClick={handleExport}>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
